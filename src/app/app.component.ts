@@ -1,36 +1,141 @@
-import { Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterOutlet } from '@angular/router';
+import { Component, computed, effect, signal } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { RouterOutlet } from "@angular/router";
+import { FormControl, ReactiveFormsModule, Validators } from "@angular/forms";
+
+interface Task {
+  title: string;
+  isCompleted: boolean;
+}
 
 @Component({
-  selector: 'app-root',
+  selector: "app-root",
   standalone: true,
-  imports: [CommonModule, RouterOutlet],
+  imports: [CommonModule, RouterOutlet, ReactiveFormsModule],
   template: `
-    <!--The content below is only a placeholder and can be replaced.-->
-    <div style="text-align:center" class="content">
-      <h1>
-        Welcome to {{title}}!
-      </h1>
-      <span style="display: block">{{ title }} app is running!</span>
-      <img width="300" alt="Angular Logo" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMjUwIj4KICAgIDxwYXRoIGZpbGw9IiNERDAwMzEiIGQ9Ik0xMjUgMzBMMzEuOSA2My4ybDE0LjIgMTIzLjFMMTI1IDIzMGw3OC45LTQzLjcgMTQuMi0xMjMuMXoiIC8+CiAgICA8cGF0aCBmaWxsPSIjQzMwMDJGIiBkPSJNMTI1IDMwdjIyLjItLjFWMjMwbDc4LjktNDMuNyAxNC4yLTEyMy4xTDEyNSAzMHoiIC8+CiAgICA8cGF0aCAgZmlsbD0iI0ZGRkZGRiIgZD0iTTEyNSA1Mi4xTDY2LjggMTgyLjZoMjEuN2wxMS43LTI5LjJoNDkuNGwxMS43IDI5LjJIMTgzTDEyNSA1Mi4xem0xNyA4My4zaC0zNGwxNy00MC45IDE3IDQwLjl6IiAvPgogIDwvc3ZnPg==">
-    </div>
-    <h2>Here are some links to help you start: </h2>
-    <ul>
-      <li>
-        <h2><a target="_blank" rel="noopener" href="https://angular.io/tutorial">Tour of Heroes</a></h2>
-      </li>
-      <li>
-        <h2><a target="_blank" rel="noopener" href="https://angular.io/cli">CLI Documentation</a></h2>
-      </li>
-      <li>
-        <h2><a target="_blank" rel="noopener" href="https://blog.angular.io/">Angular blog</a></h2>
-      </li>
-    </ul>
-    <router-outlet></router-outlet>
+    <input
+      type="text"
+      placeholder="Type a task name"
+      [formControl]="taskControl"
+      (keydown.enter)="addTask()"
+    />
+
+    <h3>Tasks To Do</h3>
+
+    <ng-container *ngIf="hasUncompletedTasks(); else noTasks">
+      <ul>
+        <ng-container *ngFor="let item of uncompletedTasks()">
+          <li class="item">
+            <strong>{{ item.title }}</strong>
+            <button (click)="markTaskAsCompleted(item)">
+              Mark as completed
+            </button>
+            <button (click)="removeTask(item)">Remove</button>
+          </li>
+        </ng-container>
+      </ul>
+    </ng-container>
+
+    <h3>Completed Tasks</h3>
+
+    <ng-container *ngIf="hasCompletedTasks(); else noTasks">
+      <ul>
+        <ng-container *ngFor="let item of completedTasks()">
+          <li class="item completed">
+            <strong>{{ item.title }}</strong>
+            <button (click)="removeTask(item)">Remove</button>
+          </li>
+        </ng-container>
+      </ul>
+    </ng-container>
+
+    <ng-template #noTasks>
+      <div>
+        <span>There are no tasks to show here</span>
+      </div>
+    </ng-template>
   `,
-  styles: [],
+  styles: [
+    `
+      .item {
+        &.completed {
+          text-decoration: line-through;
+        }
+
+        padding: 8px;
+
+        font-size: 18px;
+
+        button {
+          margin-left: 8px;
+        }
+      }
+    `,
+  ],
 })
 export class AppComponent {
-  title = 'singals-example';
+  taskControl = new FormControl("", Validators.required);
+
+  tasks = signal<Task[]>(this.getTasksFromStorage());
+
+  uncompletedTasks = computed(() =>
+    this.tasks().filter((task) => !task.isCompleted)
+  );
+
+  completedTasks = computed(() =>
+    this.tasks().filter((task) => task.isCompleted)
+  );
+
+  hasCompletedTasks = computed(() => this.completedTasks().length > 0);
+
+  hasUncompletedTasks = computed(() => this.uncompletedTasks().length > 0);
+
+  constructor() {
+    effect(() => {
+      this.saveTasksInStorage();
+    });
+  }
+
+  addTask() {
+    if (this.taskControl.invalid) {
+      return;
+    }
+
+    this.tasks.update((tasks) => {
+      const taskTitle = this.taskControl.value as string;
+
+      const newTask: Task = { title: taskTitle, isCompleted: false };
+
+      return [...tasks, newTask];
+    });
+
+    this.taskControl.reset();
+  }
+
+  markTaskAsCompleted(task: Task) {
+    this.tasks.mutate((tasks) => {
+      const taskIndex = tasks.indexOf(task);
+
+      const taskMarkedAsCompleted: Task = { ...task, isCompleted: true };
+
+      tasks.splice(taskIndex, 1, taskMarkedAsCompleted);
+    });
+  }
+
+  removeTask(task: Task) {
+    this.tasks.mutate((tasks) => {
+      const taskIndex = tasks.indexOf(task);
+      tasks.splice(taskIndex, 1);
+    });
+  }
+
+  saveTasksInStorage() {
+    if (this.tasks()) {
+      window.localStorage.setItem("tasks", JSON.stringify(this.tasks()));
+    }
+  }
+
+  getTasksFromStorage() {
+    return JSON.parse((window.localStorage.getItem("tasks") as string) || "[]");
+  }
 }
